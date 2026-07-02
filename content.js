@@ -1,6 +1,8 @@
-// Netflix does not expose country-of-origin in the DOM, so filtering is
-// heuristic: row/category names, a seed list of well-known Indian titles,
-// Indic-script detection, and user-added terms from the popup.
+// Neither Netflix nor Prime Video exposes country-of-origin in the DOM, so
+// filtering is heuristic: row/category names, a seed list of well-known
+// Indian titles, Indic-script detection, and user-added terms from the popup.
+
+const SITE = /primevideo|amazon/.test(location.hostname) ? "prime" : "netflix";
 
 const KEYWORDS = [
   "india", "indian", "bollywood", "tollywood", "kollywood", "mollywood",
@@ -9,6 +11,7 @@ const KEYWORDS = [
 ];
 
 const SEED_TITLES = [
+  // Netflix
   "sacred games", "delhi crime", "mismatched", "kota factory", "heeramandi",
   "the railway men", "guns & gulaabs", "jamtara", "masaba masaba",
   "little things", "taj mahal 1989", "class", "rana naidu", "khakee",
@@ -25,9 +28,16 @@ const SEED_TITLES = [
   "serious men", "the white tiger", "sardar udham", "lust stories",
   "ghost stories", "chopsticks", "bulbbul", "raat akeli hai", "gunjan saxena",
   "shershaah", "meenakshi sundareshwar", "gehraiyaan", "jaane jaan", "kill",
-  "laapataa ladies", "12th fail", "maharaj", "sector 36", "cttc",
+  "laapataa ladies", "12th fail", "maharaj", "sector 36",
   "do patti", "the archies", "kaala paani", "farzi", "dahaad", "made in heaven",
-  "mirzapur", "panchayat", "paatal lok", "the family man", "asur", "aashram"
+  // Prime Video
+  "mirzapur", "panchayat", "paatal lok", "the family man", "asur", "aashram",
+  "bandish bandits", "breathe", "breathe: into the shadows",
+  "four more shots please", "inside edge", "mumbai diaries 26/11", "jubilee",
+  "gulmohar", "citadel: honey bunny", "call me bae", "poacher",
+  "the forgotten army", "tandav", "soorarai pottru", "ponniyin selvan",
+  "sita ramam", "kalki 2898 ad", "salaar", "hanu man", "maharaja",
+  "vikram", "leo", "jailer", "master"
 ];
 
 // Devanagari through Malayalam blocks (covers Hindi, Bengali, Punjabi,
@@ -82,9 +92,7 @@ function cardText(card) {
   return fallback ? fallback.textContent : card.textContent;
 }
 
-function scan() {
-  if (!enabled) return;
-
+function scanNetflix() {
   // Whole browse rows whose category name matches ("Bollywood Movies",
   // "Indian TV Dramas", "Hindi-Language Films", ...).
   document.querySelectorAll(".lolomoRow, [data-list-context]").forEach((row) => {
@@ -109,6 +117,44 @@ function scan() {
       (billboard.querySelector(".billboard-title") || {}).textContent;
     if (isBlockedText(text)) hide(billboard);
   });
+}
+
+function scanPrime() {
+  // Carousel rows whose heading matches ("Movies in Hindi", "Top in India",
+  // "Tamil movies we think you'll like", ...).
+  document
+    .querySelectorAll('[data-testid*="carousel"], [class*="tst-collection"]')
+    .forEach((row) => {
+      if (row.dataset.nifHidden) return;
+      const header = row.querySelector("h2, h3");
+      if (header && isBlockedText(header.textContent)) hide(row);
+    });
+
+  // Title cards carry the exact name in data-card-title.
+  document.querySelectorAll("[data-card-title]").forEach((card) => {
+    const container = card.closest("li") || card;
+    if (container.dataset.nifHidden) return;
+    if (isBlockedText(card.getAttribute("data-card-title"))) hide(container);
+  });
+
+  // Fallback: any link to a title detail page, labelled or short-texted.
+  document.querySelectorAll('a[href*="/detail/"]').forEach((link) => {
+    const container = link.closest("li, article") || link;
+    if (container.dataset.nifHidden) return;
+    const label =
+      link.getAttribute("aria-label") || link.getAttribute("title");
+    // Bare textContent can include synopsis/badge noise, so only trust it
+    // when it is plausibly just a title.
+    const text =
+      label || (link.textContent.trim().length < 80 ? link.textContent : "");
+    if (isBlockedText(text)) hide(container);
+  });
+}
+
+function scan() {
+  if (!enabled) return;
+  if (SITE === "prime") scanPrime();
+  else scanNetflix();
 }
 
 let scanQueued = false;

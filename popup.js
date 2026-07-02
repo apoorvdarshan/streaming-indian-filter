@@ -13,7 +13,7 @@ document.getElementById("save").addEventListener("click", () => {
     .map((t) => t.trim())
     .filter(Boolean);
   chrome.storage.sync.set({ enabled: enabledBox.checked, extraTerms }, () => {
-    savedNote.textContent = "Saved — refresh Netflix if needed";
+    savedNote.textContent = "Saved — refresh the site if needed";
     setTimeout(() => (savedNote.textContent = ""), 2000);
   });
 });

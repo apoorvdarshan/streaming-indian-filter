@@ -1,18 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Netflix Regional Filter (India)",
-  "version": "1.0.0",
-  "description": "Hides Indian shows and movies from Netflix browse rows, search results, and the billboard banner.",
+  "name": "Streaming Regional Filter (India)",
+  "version": "1.1.0",
+  "description": "Hides Indian shows and movies from Netflix and Prime Video — browse rows, search results, and banners.",
   "permissions": ["storage"],
   "content_scripts": [
     {
-      "matches": ["https://www.netflix.com/*"],
+      "matches": [
+        "https://www.netflix.com/*",
+        "https://www.primevideo.com/*",
+        "https://*.primevideo.com/*",
+        "https://www.amazon.com/gp/video/*",
+        "https://www.amazon.in/gp/video/*",
+        "https://www.amazon.co.uk/gp/video/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Netflix Regional Filter"
+    "default_title": "Streaming Regional Filter"
   }
 }
