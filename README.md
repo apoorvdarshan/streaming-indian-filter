@@ -45,16 +45,16 @@ recommendation profile.
 
 ## Connect
 
-- [Profile](https://aopv.dev)
+- [Profile](https://apoorvdarshan.com)
 - [X](https://x.com/aporvv)
-- [GitHub](https://github.com/aopv)
+- [GitHub](https://github.com/apoorvdarshan)
 - [LinkedIn](https://www.linkedin.com/in/aopv/)
 - [Product Hunt](https://www.producthunt.com/@aov)
 - [YouTube](https://www.youtube.com/@aopv)
 - [Twitch](https://www.twitch.tv/apoorvv)
 - [Instagram](https://www.instagram.com/aporvvv)
 - [TrustMRR](https://trustmrr.com/founder/apoorvdarshan)
-- [Sponsor on GitHub](https://github.com/sponsors/aopv)
+- [Sponsor on GitHub](https://github.com/sponsors/apoorvdarshan)
 - [Ko-fi](https://ko-fi.com/apv)
 - [Grokipedia](https://grokipedia.com/page/Apoorv_Darshan)
 - Email: [apoorvdarshan@gmail.com](mailto:apoorvdarshan@gmail.com), [ad13dtu@gmail.com](mailto:ad13dtu@gmail.com), [apoorv@fud-ai.app](mailto:apoorv@fud-ai.app)
