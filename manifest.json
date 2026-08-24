@@ -1,9 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Streaming Regional Filter (India)",
-  "version": "1.1.1",
+  "version": "1.1.0",
   "description": "Hides Indian shows and movies from Netflix and Prime Video — browse rows, search results, and banners.",
-  "homepage_url": "https://apoorvdarshan.com",
   "permissions": ["storage"],
   "content_scripts": [
     {
