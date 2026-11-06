@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <title>Streaming Regional Filter</title>
   <style>
     body {
       font-family: -apple-system, system-ui, sans-serif;
@@ -38,7 +39,7 @@
       cursor: pointer;
     }
     button:hover { background: #f6121d; }
-    #saved { font-size: 11px; color: #46d369; height: 14px; margin-top: 6px; text-align: center; }
+    #saved { font-size: 11px; color: #46d369; min-height: 28px; margin-top: 6px; text-align: center; }
   </style>
 </head>
 <body>
@@ -47,10 +48,17 @@
     <input type="checkbox" id="enabled" />
     Filter enabled
   </label>
-  <textarea id="terms" placeholder="Extra words or exact titles to block, one per line"></textarea>
-  <p class="hint">Built-in filters already cover Indian category rows, well-known titles, and Indic-script text. Add anything it misses here.</p>
-  <button id="save">Save</button>
-  <div id="saved"></div>
+  <label style="margin-top: 10px">
+    <input type="checkbox" id="hide-ambiguous" />
+    Hide shared-name titles too
+  </label>
+  <p class="hint">Stronger filtering, on by default. May also hide foreign movies or shows with the same title. Turn off to keep uncertain matches.</p>
+  <p class="hint" id="catalog-info"></p>
+  <textarea id="terms" aria-label="Additional words or titles to block" placeholder="Optional extra words or titles, one per line"></textarea>
+  <p class="hint">Automatically matches movies and shows against an offline country-of-origin catalog. Extra terms apply to both sites. Reload the extension and streaming tabs after an extension update.</p>
+  <button id="save" disabled>Save</button>
+  <div id="saved" role="status" aria-live="polite"></div>
+  <script src="catalog.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

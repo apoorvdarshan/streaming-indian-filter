@@ -1,191 +1,143 @@
-// Neither Netflix nor Prime Video exposes country-of-origin in the DOM, so
-// filtering is heuristic: row/category names, a seed list of well-known
-// Indian titles, Indic-script detection, and user-added terms from the popup.
+(() => {
+  const SITE = /(^|\.)netflix\.com$/.test(location.hostname) ? "netflix" : "prime";
+  const PRIME_LINKS = 'a[href*="/detail/"], a[href*="/dp/"], a[href*="/gp/product/"]';
+  const PRIME_CARDS = 'article, [data-testid="card"], [data-testid="title-card"], [data-card-title]';
+  const hidden = new Map();
+  let enabled = false;
+  let matcher = RegionalMatcher.create();
+  let scanQueued = false;
 
-const SITE = /primevideo|amazon/.test(location.hostname) ? "prime" : "netflix";
+  function setHidden(el, blocked) {
+    if (blocked) {
+      if (!hidden.has(el)) {
+        hidden.set(el, [el.style.getPropertyValue("display"), el.style.getPropertyPriority("display")]);
+        el.dataset.nifHidden = "1";
+      }
+      if (el.style.getPropertyValue("display") !== "none" || el.style.getPropertyPriority("display") !== "important") {
+        el.style.setProperty("display", "none", "important");
+      }
+    } else if (hidden.has(el)) {
+      const [value, priority] = hidden.get(el);
+      if (value) el.style.setProperty("display", value, priority);
+      else el.style.removeProperty("display");
+      delete el.dataset.nifHidden;
+      hidden.delete(el);
+    }
+  }
 
-const KEYWORDS = [
-  "india", "indian", "bollywood", "tollywood", "kollywood", "mollywood",
-  "hindi", "tamil", "telugu", "malayalam", "kannada", "punjabi", "marathi",
-  "bengali", "gujarati", "bhojpuri", "desi", "south asian", "hindustani"
-];
+  function titleTexts(card) {
+    const texts = new Set();
+    const add = text => {
+      if (text && text.trim().length <= 240) texts.add(text.trim());
+    };
+    function attributes(node) {
+      for (const attr of ["data-card-title", "data-title", "aria-label", "title", "alt"]) add(node.getAttribute(attr));
+    }
+    attributes(card);
+    card.querySelectorAll('[data-card-title], [data-title], img[alt], [aria-label], [title], .fallback-text, .billboard-title, h2, h3, [itemprop="name"]')
+      .forEach(node => {
+        attributes(node);
+        if (node.matches('.fallback-text, .billboard-title, h2, h3, [itemprop="name"]')) add(node.textContent);
+      });
+    // Text-only cards occur in search and older site layouts. Never inspect
+    // full synopsis/metadata text when an actual title is already available.
+    if (!texts.size && card.textContent.trim().length < 100) add(card.textContent);
+    return [...texts];
+  }
 
-const SEED_TITLES = [
-  // Netflix
-  "sacred games", "delhi crime", "mismatched", "kota factory", "heeramandi",
-  "the railway men", "guns & gulaabs", "jamtara", "masaba masaba",
-  "little things", "taj mahal 1989", "class", "rana naidu", "khakee",
-  "scoop", "trial by fire", "kohrra", "ic 814", "amar singh chamkila",
-  "maamla legal hai", "killer soup", "cat", "mai", "yeh kaali kaali ankhein",
-  "fabulous lives of bollywood wives", "indian matchmaking", "the big day",
-  "bombay begums", "aranyak", "feels like ishq", "decoupled",
-  "eternally confused and eager for love", "minnal murali", "rrr",
-  "baahubali", "kgf", "k.g.f", "pushpa", "jawan", "pathaan", "animal",
-  "gangubai kathiawadi", "brahmastra", "dangal", "3 idiots", "pk", "lagaan",
-  "sholay", "kabhi khushi kabhie gham", "dilwale dulhania le jayenge",
-  "zindagi na milegi dobara", "queen", "andhadhun", "drishyam", "tumbbad",
-  "haseen dillruba", "darlings", "monica o my darling", "ludo", "ak vs ak",
-  "serious men", "the white tiger", "sardar udham", "lust stories",
-  "ghost stories", "chopsticks", "bulbbul", "raat akeli hai", "gunjan saxena",
-  "shershaah", "meenakshi sundareshwar", "gehraiyaan", "jaane jaan", "kill",
-  "laapataa ladies", "12th fail", "maharaj", "sector 36",
-  "do patti", "the archies", "kaala paani", "farzi", "dahaad", "made in heaven",
-  // Prime Video
-  "mirzapur", "panchayat", "paatal lok", "the family man", "asur", "aashram",
-  "bandish bandits", "breathe", "breathe: into the shadows",
-  "four more shots please", "inside edge", "mumbai diaries 26/11", "jubilee",
-  "gulmohar", "citadel: honey bunny", "call me bae", "poacher",
-  "the forgotten army", "tandav", "soorarai pottru", "ponniyin selvan",
-  "sita ramam", "kalki 2898 ad", "salaar", "hanu man", "maharaja",
-  "vikram", "leo", "jailer", "master"
-];
+  function originMetadata(card) {
+    const origin = card.matches('[data-country-of-origin], [data-production-country]') ? card
+      : card.querySelector('[data-country-of-origin], [data-production-country], [itemprop="countryOfOrigin"]');
+    const date = card.matches('[data-release-year]') ? card
+      : card.querySelector('[data-release-year], [itemprop="datePublished"], time[datetime]');
+    return {
+      country: origin && (origin.getAttribute("data-country-of-origin") || origin.getAttribute("data-production-country") || origin.getAttribute("content") || origin.textContent),
+      year: (date && (date.getAttribute("data-release-year") || date.getAttribute("content") || date.getAttribute("datetime") || date.textContent))?.match(/\b(?:19|20)\d{2}\b/)?.[0]
+    };
+  }
 
-// Devanagari through Malayalam blocks (covers Hindi, Bengali, Punjabi,
-// Gujarati, Odia, Tamil, Telugu, Kannada, Malayalam).
-const INDIC_SCRIPT = /[ऀ-ൿ]/;
-
-let enabled = true;
-let extraTerms = [];
-let keywordRegex = null;
-let blockedTitles = new Set();
-let hiddenCount = 0;
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function rebuildMatchers() {
-  const words = KEYWORDS.concat(extraTerms).filter(Boolean).map(escapeRegex);
-  keywordRegex = new RegExp("\\b(" + words.join("|") + ")\\b", "i");
-  blockedTitles = new Set(
-    SEED_TITLES.concat(extraTerms).map((t) => t.toLowerCase().trim())
-  );
-}
-
-function isBlockedText(text) {
-  if (!text) return false;
-  const t = text.toLowerCase().trim();
-  return blockedTitles.has(t) || keywordRegex.test(t) || INDIC_SCRIPT.test(t);
-}
-
-function hide(el) {
-  if (!el || el.dataset.nifHidden) return;
-  el.dataset.nifHidden = "1";
-  el.style.setProperty("display", "none", "important");
-  hiddenCount++;
-}
-
-function unhideAll() {
-  document.querySelectorAll("[data-nif-hidden]").forEach((el) => {
-    el.style.removeProperty("display");
-    delete el.dataset.nifHidden;
-  });
-  hiddenCount = 0;
-}
-
-function cardText(card) {
-  const labelled = card.matches("[aria-label]")
-    ? card
-    : card.querySelector("[aria-label]");
-  if (labelled) return labelled.getAttribute("aria-label");
-  const fallback = card.querySelector(".fallback-text");
-  return fallback ? fallback.textContent : card.textContent;
-}
-
-function scanNetflix() {
-  // Whole browse rows whose category name matches ("Bollywood Movies",
-  // "Indian TV Dramas", "Hindi-Language Films", ...).
-  document.querySelectorAll(".lolomoRow, [data-list-context]").forEach((row) => {
-    if (row.dataset.nifHidden) return;
-    const header = row.querySelector(".row-header-title, .rowHeader");
-    if (header && isBlockedText(header.textContent)) hide(row);
-  });
-
-  // Individual title cards in rows, search results, and galleries.
-  document.querySelectorAll(".title-card").forEach((card) => {
-    const container = card.closest(".slider-item") || card;
-    if (container.dataset.nifHidden) return;
-    if (isBlockedText(cardText(card))) hide(container);
-  });
-
-  // The big billboard banner at the top of browse pages.
-  document.querySelectorAll(".billboard-row").forEach((billboard) => {
-    if (billboard.dataset.nifHidden) return;
-    const logo = billboard.querySelector(".billboard .logo, .title-logo");
-    const text =
-      (logo && (logo.getAttribute("alt") || logo.getAttribute("title"))) ||
-      (billboard.querySelector(".billboard-title") || {}).textContent;
-    if (isBlockedText(text)) hide(billboard);
-  });
-}
-
-function scanPrime() {
-  // Carousel rows whose heading matches ("Movies in Hindi", "Top in India",
-  // "Tamil movies we think you'll like", ...).
-  document
-    .querySelectorAll('[data-testid*="carousel"], [class*="tst-collection"]')
-    .forEach((row) => {
-      if (row.dataset.nifHidden) return;
-      const header = row.querySelector("h2, h3");
-      if (header && isBlockedText(header.textContent)) hide(row);
-    });
-
-  // Title cards carry the exact name in data-card-title.
-  document.querySelectorAll("[data-card-title]").forEach((card) => {
-    const container = card.closest("li") || card;
-    if (container.dataset.nifHidden) return;
-    if (isBlockedText(card.getAttribute("data-card-title"))) hide(container);
-  });
-
-  // Fallback: any link to a title detail page, labelled or short-texted.
-  document.querySelectorAll('a[href*="/detail/"]').forEach((link) => {
-    const container = link.closest("li, article") || link;
-    if (container.dataset.nifHidden) return;
-    const label =
-      link.getAttribute("aria-label") || link.getAttribute("title");
-    // Bare textContent can include synopsis/badge noise, so only trust it
-    // when it is plausibly just a title.
-    const text =
-      label || (link.textContent.trim().length < 80 ? link.textContent : "");
-    if (isBlockedText(text)) hide(container);
-  });
-}
-
-function scan() {
-  if (!enabled) return;
-  if (SITE === "prime") scanPrime();
-  else scanNetflix();
-}
-
-let scanQueued = false;
-function queueScan() {
-  if (scanQueued) return;
-  scanQueued = true;
-  setTimeout(() => {
+  function scan() {
     scanQueued = false;
-    scan();
-  }, 150);
-}
+    if (!enabled) return;
+    const decisions = new Map();
+    function consider(container, blocked) {
+      decisions.set(container, blocked || decisions.get(container) || false);
+    }
+    function card(container, source = container) {
+      const metadata = originMetadata(source);
+      const titles = titleTexts(source);
+      consider(container, titles.some(title => matcher.isBlockedTitle(title, metadata)) ||
+        (!titles.length && metadata.country && matcher.isBlockedTitle("", metadata)));
+    }
 
-function loadSettings() {
-  chrome.storage.sync.get({ enabled: true, extraTerms: [] }, (cfg) => {
-    enabled = cfg.enabled;
-    extraTerms = cfg.extraTerms;
-    rebuildMatchers();
-    if (enabled) scan();
-    else unhideAll();
+    if (SITE === "netflix") {
+      document.querySelectorAll('.lolomoRow, [data-list-context]').forEach(row => {
+        const header = row.querySelector('.row-header-title, .rowHeader');
+        consider(row, !!header && matcher.isBlockedCategory(header.textContent));
+      });
+      document.querySelectorAll('.title-card').forEach(el => card(el.closest('.slider-item') || el, el));
+      document.querySelectorAll('.billboard-row').forEach(el => card(el));
+    } else {
+      document.querySelectorAll('section, [data-testid*="carousel"], [class*="tst-collection"]').forEach(row => {
+        const header = row.querySelector('h2, h3');
+        // A card title is not a category heading.
+        if (header && !header.closest(PRIME_CARDS)) consider(row, matcher.isBlockedCategory(header.textContent));
+      });
+      const cards = new Set();
+      document.querySelectorAll(PRIME_CARDS).forEach(el => {
+        // Some carousels are themselves articles. Only treat leaf articles as
+        // cards, so one matching recommendation cannot hide its neighbours.
+        if (!el.querySelector('article')) {
+          const leaf = el.closest('article') || el;
+          cards.add(leaf.closest('li') || leaf);
+        }
+      });
+      document.querySelectorAll(PRIME_LINKS).forEach(link => {
+        if (link.closest('header, nav, footer')) return;
+        cards.add(link.closest('li, article') || link);
+      });
+      cards.forEach(el => card(el));
+    }
+
+    // Re-evaluate hidden nodes too: both sites reuse cards during scrolling
+    // and SPA navigation. Removing a term must immediately restore matches.
+    for (const el of hidden.keys()) {
+      if (!el.isConnected) hidden.delete(el);
+      else if (!decisions.get(el)) setHidden(el, false);
+    }
+    for (const [el, blocked] of decisions) setHidden(el, blocked);
+  }
+
+  function queueScan() {
+    if (!enabled || scanQueued) return;
+    scanQueued = true;
+    setTimeout(scan, 100);
+  }
+
+  function loadSettings() {
+    chrome.storage.sync.get({ enabled: true, extraTerms: [], hideAmbiguous: true }, cfg => {
+      if (chrome.runtime.lastError) return;
+      enabled = cfg.enabled !== false;
+      matcher = RegionalMatcher.create(Array.isArray(cfg.extraTerms) ? cfg.extraTerms : [], {
+        hideAmbiguous: cfg.hideAmbiguous !== false
+      });
+      if (enabled) scan();
+      else for (const el of hidden.keys()) setHidden(el, false);
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && (changes.enabled || changes.extraTerms || changes.hideAmbiguous)) loadSettings();
   });
-}
-
-chrome.storage.onChanged.addListener(loadSettings);
-
-rebuildMatchers();
-loadSettings();
-
-new MutationObserver(queueScan).observe(document.documentElement, {
-  childList: true,
-  subtree: true
-});
-
-// Safety net for SPA navigations the observer batches away.
-setInterval(queueScan, 2000);
+  new MutationObserver(mutations => {
+    if (mutations.some(m => m.type !== "attributes" || m.attributeName !== "style" ||
+      (hidden.has(m.target) && m.target.style.getPropertyValue("display") !== "none"))) queueScan();
+  }).observe(document.documentElement, {
+    childList: true, characterData: true, subtree: true, attributes: true,
+    attributeFilter: ["alt", "title", "aria-label", "data-card-title", "data-title", "href",
+      "data-country-of-origin", "data-production-country", "data-release-year", "content", "datetime", "style"]
+  });
+  window.addEventListener("pageshow", queueScan);
+  window.addEventListener("popstate", queueScan);
+  loadSettings();
+})();
